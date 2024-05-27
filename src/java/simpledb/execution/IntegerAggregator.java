@@ -1,11 +1,11 @@
 package simpledb.execution;
 
 import simpledb.common.Type;
-import simpledb.storage.Field;
-import simpledb.storage.IntField;
-import simpledb.storage.Tuple;
+import simpledb.storage.*;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 
 /**
  * Knows how to compute some aggregate over a set of IntFields.
@@ -73,22 +73,22 @@ public class IntegerAggregator implements Aggregator {
     private class AvgHandler extends  AggHandler {
         HashMap<Field,Integer> sum;
         HashMap<Field,Integer> count;
-        private void AggHandler() {
+        private AvgHandler() {
             sum = new HashMap<>();
             count = new HashMap<>();
-
         }
 
         @Override
         void handle(Field field, IntField intField) {
-            if(sum.containsKey(field)) {
+            if(sum.containsKey(field) && count.containsKey(field)) {
                 sum.put(field,sum.get(field)+intField.getValue());
                 count.put(field,count.get(field)+1);
             }else {
                 sum.put(field,intField.getValue());
                 count.put(field,1);
             }
-            aggResult.put(field,sum.get(field)/count.get(field));
+            int avg = sum.get(field) / count.get(field);
+            aggResult.put(field,avg);
         }
     }
 
@@ -149,7 +149,7 @@ public class IntegerAggregator implements Aggregator {
         // some code goes here
         Field gbField;
         IntField intField = (IntField) tup.getField(afield);
-        if(afield == NO_GROUPING ) {
+        if(gbfield == NO_GROUPING ) {
             gbField = null;
         }else {
             gbField = tup.getField(gbfield);
@@ -167,8 +167,40 @@ public class IntegerAggregator implements Aggregator {
      */
     public OpIterator iterator() {
         // some code goes here
-        throw new
-        UnsupportedOperationException("please implement me for lab2");
+        HashMap<Field, Integer> aggResult = aggHandler.getAggResult();
+        Type[] fieldTypes;
+        String[] fieldNames;
+        TupleDesc tupleDesc;
+        List<Tuple> tuples = new ArrayList<>();
+        if(gbfield == NO_GROUPING) {
+            fieldTypes = new Type[]{Type.INT_TYPE};
+            fieldNames = new String[]{"aggregateValue"};
+            tupleDesc = new TupleDesc(fieldTypes,fieldNames);
+            Tuple tuple = new Tuple(tupleDesc);
+            IntField intField = new IntField(aggResult.get(null));
+            tuple.setField(0,intField);
+            tuples.add(tuple);
+        }else {
+            fieldTypes = new Type[]{gbfieldtype,Type.INT_TYPE};
+            fieldNames = new String[]{"groupByValue" , "aggregateValue"};
+            tupleDesc = new TupleDesc(fieldTypes,fieldNames);
+            for(Field field : aggResult.keySet()){
+                Tuple tuple = new Tuple(tupleDesc);
+                if(gbfieldtype == Type.INT_TYPE){
+                    IntField gbField = (IntField)field;
+                    tuple.setField(0,gbField);
+                } else {
+                    StringField gbField = (StringField) field;
+                    tuple.setField(0,gbField);
+                }
+
+                IntField resultField = new IntField(aggResult.get(field));
+                tuple.setField(1,resultField);
+                tuples.add(tuple);
+            }
+        }
+        return new TupleIterator(tupleDesc,tuples);
     }
+
 
 }
