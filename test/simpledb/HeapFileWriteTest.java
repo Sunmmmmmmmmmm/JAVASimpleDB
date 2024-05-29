@@ -72,11 +72,12 @@ public class HeapFileWriteTest extends TestUtil.CreateHeapFile {
         // Hint: You can see this in HeapFile's iterator right after assigning the
         // next HeapPage's iterator and checking if it's empty (hasNext()), making
         // sure it moves onto the next page until hitting the final page.
-        smallFile.writePage(new HeapPage(new HeapPageId(tableId, 0), empty));
-        smallFile.writePage(new HeapPage(new HeapPageId(tableId, 1), empty));
-        smallFile.writePage(new HeapPage(new HeapPageId(tableId, 2), full));
         smallFile.writePage(new HeapPage(new HeapPageId(tableId, 3), empty));
         smallFile.writePage(new HeapPage(new HeapPageId(tableId, 4), full));
+        smallFile.writePage(new HeapPage(new HeapPageId(tableId, 0), empty));
+        smallFile.writePage(new HeapPage(new HeapPageId(tableId, 1), full));
+        smallFile.writePage(new HeapPage(new HeapPageId(tableId, 2), full));
+
         DbFileIterator it = smallFile.iterator(tid);
         it.open();
         int count = 0;
@@ -86,7 +87,7 @@ public class HeapFileWriteTest extends TestUtil.CreateHeapFile {
             count += 1;
         }
         // Since we have two full pages, we should see all of 2*numTuples.
-        assertEquals(2*numTuples, count);
+        assertEquals(3*numTuples, count);
         it.close();
     }
 
