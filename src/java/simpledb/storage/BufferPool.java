@@ -10,7 +10,10 @@ import simpledb.transaction.TransactionId;
 import java.io.*;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
+
+
 
 /**
  * BufferPool manages the reading and writing of pages into memory from
@@ -36,7 +39,40 @@ public class BufferPool {
 
     private int numPages;
 
-    private HashMap<PageId,Page> bufferPool;
+    private HashMap<PageId,LinkedNode> bufferPool;
+    LinkedNode head, tail;
+    public class LinkedNode {
+        PageId pageId;
+        Page page;
+        LinkedNode prev;
+        LinkedNode next;
+        public LinkedNode() {}
+        public LinkedNode(PageId _pageId, Page _page) {pageId = _pageId; page = _page;}
+    }
+    private void addToHead(LinkedNode node) {
+        node.prev = head;
+        node.next = head.next;
+        head.next.prev = node;
+        head.next = node;
+    }
+
+    private void removeNode(LinkedNode node) {
+        node.prev.next = node.next;
+        node.next.prev = node.prev;
+    }
+
+    private void moveToHead(LinkedNode node) {
+        removeNode(node);
+        addToHead(node);
+    }
+
+    private LinkedNode removeTail() {
+        LinkedNode res = tail.prev;
+        removeNode(res);
+        return res;
+    }
+
+
     /**
      * Creates a BufferPool that caches up to numPages pages.
      *
@@ -46,9 +82,26 @@ public class BufferPool {
         // some code goes here
         this.numPages = numPages;
         bufferPool = new HashMap<>();
+        head = new LinkedNode();
+        tail = new LinkedNode();
+        head.next = tail;
+        tail.next = head;
 
     }
-    
+
+    /**
+     * 获得bufferpool的size
+     * @return size
+     */
+    public int getBufferPoolSize() {
+        int n=0;
+        while(head!=tail) {
+            n++;
+            head = head.next;
+        }
+        return n-1;
+    }
+
     public static int getPageSize() {
       return pageSize;
     }
@@ -82,15 +135,27 @@ public class BufferPool {
         throws TransactionAbortedException, DbException {
         // some code goes here
         if(!bufferPool.containsKey(pid)){
+            DbFile databaseFile = Database.getCatalog().getDatabaseFile(pid.getTableId());
+            Page page = databaseFile.readPage(pid);
+            LinkedNode linkedNode = new LinkedNode(pid, page);
+
             if(numPages>bufferPool.size()){
-                DbFile databaseFile = Database.getCatalog().getDatabaseFile(pid.getTableId());
-                Page page = databaseFile.readPage(pid);
-                bufferPool.put(pid,page);
+                addToHead(linkedNode);
+                bufferPool.put(pid,linkedNode);
+                return page;
             }else{
-                throw new DbException("bufferPool is full");
+                evictPage();
+                addToHead(linkedNode);
+                bufferPool.put(pid,linkedNode);
+                return page;
+
             }
+        }else {
+            LinkedNode linkedNode = bufferPool.get(pid);
+            moveToHead(linkedNode);
+            return linkedNode.page;
         }
-        return bufferPool.get(pid);
+
     }
 
     /**
@@ -155,6 +220,29 @@ public class BufferPool {
         throws DbException, IOException, TransactionAbortedException {
         // some code goes here
         // not necessary for lab1
+        DbFile databaseFile = Database.getCatalog().getDatabaseFile(tableId);
+        List<Page> pageList = databaseFile.insertTuple(tid, t);
+        for(Page page:pageList) {
+            PageId id = page.getId();
+            page.markDirty(true,tid);
+            if(!bufferPool.containsKey(id)) {
+                LinkedNode linkedNode = new LinkedNode(id, page);
+                int bufferPoolSize = getBufferPoolSize();
+                if(getBufferPoolSize() < numPages) {
+                    addToHead(linkedNode);
+                    bufferPool.put(id,linkedNode);
+                } else {
+                    evictPage();
+                    addToHead(linkedNode);
+                    bufferPool.put(id,linkedNode);
+                }
+            } else {
+                LinkedNode linkedNode = bufferPool.get(id);
+                addToHead(linkedNode);
+                linkedNode.page = page;
+                bufferPool.put(id,linkedNode);
+            }
+        }
     }
 
     /**
@@ -174,6 +262,28 @@ public class BufferPool {
         throws DbException, IOException, TransactionAbortedException {
         // some code goes here
         // not necessary for lab1
+        DbFile databaseFile = Database.getCatalog().getDatabaseFile(t.getRecordId().getPageId().getTableId());
+        List<Page> pageList = databaseFile.deleteTuple(tid, t);
+        for(Page page : pageList) {
+            page.markDirty(true,tid);
+            LinkedNode linkedNode = bufferPool.get(page.getId());
+            if(linkedNode==null) {
+                if(getBufferPoolSize()<numPages) {
+                    LinkedNode temp = new LinkedNode(page.getId(), page);
+                    addToHead(temp);
+                    bufferPool.put(page.getId(),temp);
+                } else {
+                    evictPage();
+                    LinkedNode temp = new LinkedNode(page.getId(), page);
+                    addToHead(temp);
+                    bufferPool.put(page.getId(),temp);
+                }
+            } else {
+                linkedNode.page = page;
+                addToHead(linkedNode);
+                bufferPool.put(page.getId(),linkedNode);
+            }
+        }
     }
 
     /**
@@ -198,6 +308,7 @@ public class BufferPool {
     public synchronized void discardPage(PageId pid) {
         // some code goes here
         // not necessary for lab1
+        bufferPool.remove(pid);
     }
 
     /**
@@ -207,6 +318,12 @@ public class BufferPool {
     private synchronized  void flushPage(PageId pid) throws IOException {
         // some code goes here
         // not necessary for lab1
+        Page page = bufferPool.get(pid).page;
+        TransactionId dirty = page.isDirty();
+        if (dirty != null) {
+            Database.getCatalog().getDatabaseFile(pid.getTableId()).writePage(page);
+            page.markDirty(false,null);
+        }
     }
 
     /** Write all pages of the specified transaction to disk.
@@ -223,6 +340,14 @@ public class BufferPool {
     private synchronized  void evictPage() throws DbException {
         // some code goes here
         // not necessary for lab1
+        LinkedNode tail = removeTail();
+        PageId pageId = tail.pageId;
+        try {
+            flushPage(pageId);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        discardPage(pageId);
     }
 
 }
