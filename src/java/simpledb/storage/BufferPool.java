@@ -398,6 +398,7 @@ public class BufferPool {
     public void transactionComplete(TransactionId tid) {
         // some code goes here
         // not necessary for lab1|lab2
+        transactionComplete(tid,true);
     }
 
     /** Return true if the specified transaction has a lock on the specified page */
@@ -417,7 +418,34 @@ public class BufferPool {
     public void transactionComplete(TransactionId tid, boolean commit) {
         // some code goes here
         // not necessary for lab1|lab2
+        if (commit) {
+            try {
+                flushPages(tid);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }else {
+            restorePages(tid);
+        }
+        lockManager.completeTransaction(tid);
     }
+
+    public synchronized void restorePages(TransactionId tid){
+        for(LinkedNode node : bufferPool.values()){
+            PageId pageId = node.pageId;
+            Page page = node.page;
+            if(tid.equals(page.isDirty())){
+                int tableId = pageId.getTableId();
+                DbFile table = Database.getCatalog().getDatabaseFile(tableId);
+                Page pageFromDisk = table.readPage(pageId);
+
+                node.page=pageFromDisk;
+                bufferPool.put(pageId,node);
+                moveToHead(node);
+            }
+        }
+    }
+
 
     /**
      * Add a tuple to the specified table on behalf of transaction tid.  Will
@@ -512,6 +540,10 @@ public class BufferPool {
     public synchronized void flushAllPages() throws IOException {
         // some code goes here
         // not necessary for lab1
+        for(Page page:bufferPool) {
+            DbFile databaseFile = Database.getCatalog().getDatabaseFile(page.getId().getTableId());
+            databaseFile.writePage(page);
+        }
 
     }
 
@@ -549,6 +581,16 @@ public class BufferPool {
     public synchronized  void flushPages(TransactionId tid) throws IOException {
         // some code goes here
         // not necessary for lab1|lab2
+        for(LinkedNode node : bufferPool.values()){
+            PageId pageId = node.pageId;
+            Page page = node.page;
+            if(tid.equals(page.isDirty())){
+                int tableId = pageId.getTableId();
+                DbFile table = Database.getCatalog().getDatabaseFile(tableId);
+                table.writePage(page);
+                moveToHead(node);
+            }
+        }
     }
 
     /**
