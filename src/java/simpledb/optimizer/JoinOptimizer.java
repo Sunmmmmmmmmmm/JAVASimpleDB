@@ -204,25 +204,42 @@ public class JoinOptimizer {
      *            The size of the subsets of interest
      * @return a set of all subsets of the specified size
      */
-    public <T> Set<Set<T>> enumerateSubsets(List<T> v, int size) {
-        Set<Set<T>> els = new HashSet<>();
-        els.add(new HashSet<>());
-        // Iterator<Set> it;
-        // long start = System.currentTimeMillis();
-
-        for (int i = 0; i < size; i++) {
-            Set<Set<T>> newels = new HashSet<>();
-            for (Set<T> s : els) {
-                for (T t : v) {
-                    Set<T> news = new HashSet<>(s);
-                    if (news.add(t))
-                        newels.add(news);
-                }
-            }
-            els = newels;
+    private <T> void dfs(List<T> list, int cur, int size,Deque<T> subset, Set<Set<T>> subsets){
+        if(subset.size() == size){
+            subsets.add(new HashSet<>(subset));
+            //return;
         }
+        for(int i=cur; i<list.size(); i++){
+            subset.addLast(list.get(i));
+            dfs(list,i+1,size,subset,subsets);
+            subset.removeLast();
+        }
+    }
 
-        return els;
+    public <T> Set<Set<T>> enumerateSubsets(List<T> v, int size) {
+//        Set<Set<T>> els = new HashSet<>();
+//        els.add(new HashSet<>());
+//        // Iterator<Set> it;
+//        // long start = System.currentTimeMillis();
+//
+//        for (int i = 0; i < size; i++) {
+//            Set<Set<T>> newels = new HashSet<>();
+//            for (Set<T> s : els) {
+//                for (T t : v) {
+//                    Set<T> news = new HashSet<>(s);
+//                    if (news.add(t))
+//                        newels.add(news);
+//                }
+//            }
+//            els = newels;
+//        }
+//
+//        return els;
+        Set<Set<T>> subsets = new HashSet<>();
+        Deque<T> subset = new ArrayDeque<>();
+        dfs(v,0,size,subset,subsets);
+        return subsets;
+
 
     }
 
@@ -253,7 +270,32 @@ public class JoinOptimizer {
 
         // some code goes here
         //Replace the following
-        return joins;
+        PlanCache planCache = new PlanCache();
+        CostCard bestCostCard = new CostCard();
+        int size = joins.size();
+        for (int i = 1; i <= size; i++) {
+            Set<Set<LogicalJoinNode>> sets = enumerateSubsets(joins, i);
+            for (Set<LogicalJoinNode> set:sets) {
+                double bestCostSoFar = Double.MAX_VALUE;
+                bestCostCard = new CostCard();
+                for (LogicalJoinNode removedJoinNode:set) {
+                    CostCard costCard = computeCostAndCardOfSubplan(stats, filterSelectivities, removedJoinNode, set, bestCostSoFar, planCache);
+                    if(costCard !=null) {
+                        bestCostCard = costCard;
+                        bestCostSoFar = costCard.cost;
+                    }
+
+                }
+                if(bestCostSoFar != Double.MAX_VALUE){
+                    planCache.addPlan(set,bestCostCard.cost,bestCostCard.card, bestCostCard.plan);
+                }
+
+            }
+        }
+        if(explain){
+            printJoins(bestCostCard.plan,planCache,stats,filterSelectivities);
+        }
+        return bestCostCard.plan;
     }
 
     // ===================== Private Methods =================================
