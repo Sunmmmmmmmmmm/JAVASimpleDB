@@ -558,14 +558,20 @@ public class BufferPool {
     private synchronized  void evictPage() throws DbException {
         // some code goes here
         // not necessary for lab1
-        LinkedNode tail = removeTail();
-        PageId pageId = tail.pageId;
-        try {
-            flushPage(pageId);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
+        for (int i=0; i<numPages; i++){
+            LinkedNode tail = removeTail();
+            Page evictPage = tail.page;
+            if (evictPage.isDirty() != null){
+                addToHead(tail);
+            }
+            else{
+                PageId evictPageId = tail.pageId;
+                discardPage(evictPageId);
+                return;
+            }
         }
-        discardPage(pageId);
+        throw new DbException("all pages are dirty page ");
+
     }
 
 }
