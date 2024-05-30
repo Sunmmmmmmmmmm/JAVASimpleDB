@@ -540,9 +540,9 @@ public class BufferPool {
     public synchronized void flushAllPages() throws IOException {
         // some code goes here
         // not necessary for lab1
-        for(Page page:bufferPool) {
-            DbFile databaseFile = Database.getCatalog().getDatabaseFile(page.getId().getTableId());
-            databaseFile.writePage(page);
+        for(LinkedNode node:bufferPool.values()) {
+            DbFile databaseFile = Database.getCatalog().getDatabaseFile(node.page.getId().getTableId());
+            databaseFile.writePage(node.page);
         }
 
     }
