@@ -6,6 +6,12 @@ import simpledb.execution.Predicate;
  */
 public class IntHistogram {
 
+    int[] buckets;
+    int min;
+    int max;
+    double width;
+    int tuplesCount;
+
     /**
      * Create a new IntHistogram.
      * 
@@ -24,14 +30,32 @@ public class IntHistogram {
      */
     public IntHistogram(int buckets, int min, int max) {
     	// some code goes here
+        this.buckets = new int[buckets];
+        this.min = min;
+        this.max = max;
+        width = (max - min + 1.0) / buckets;
+        tuplesCount = 0;
     }
 
+    /**
+     * 根据value获得桶的序号；
+     * @param v
+     * @return
+     */
+    private int getIndex(int v) {
+        return (int)((v-min)/width);
+    }
     /**
      * Add a value to the set of values that you are keeping a histogram of.
      * @param v Value to add to the histogram
      */
     public void addValue(int v) {
     	// some code goes here
+        if(v>=min && v <= max) {
+            int idx = getIndex(v);
+            buckets[idx]++;
+            tuplesCount++;
+        }
     }
 
     /**
@@ -45,9 +69,35 @@ public class IntHistogram {
      * @return Predicted selectivity of this particular operator and value
      */
     public double estimateSelectivity(Predicate.Op op, int v) {
-
-    	// some code goes here
-        return -1.0;
+        switch (op) {
+            case LESS_THAN:
+                if (v <= min) {
+                    return 0.0;
+                } else if (v >= max) {
+                    return 1.0;
+                } else {
+                    int index = getIndex(v);
+                    double tuples = 0.0;
+                    for (int i = 0; i < index; i++) {
+                        tuples += buckets[i];
+                    }
+                    tuples += (1.0 * buckets[index] / width) * (v - (min + index * width));
+                    return tuples / tuplesCount;
+                }
+            case GREATER_THAN:
+                return 1 - estimateSelectivity(Predicate.Op.LESS_THAN_OR_EQ,v);
+            case EQUALS:
+                return estimateSelectivity(Predicate.Op.LESS_THAN_OR_EQ, v) -
+                        estimateSelectivity(Predicate.Op.LESS_THAN, v);
+            case NOT_EQUALS:
+                return 1 - estimateSelectivity(Predicate.Op.EQUALS,v);
+            case GREATER_THAN_OR_EQ:
+                return estimateSelectivity(Predicate.Op.GREATER_THAN,v-1);
+            case LESS_THAN_OR_EQ:
+                return estimateSelectivity(Predicate.Op.LESS_THAN,v+1);
+            default:
+                throw new UnsupportedOperationException("Operation is illegal");
+        }
     }
     
     /**
